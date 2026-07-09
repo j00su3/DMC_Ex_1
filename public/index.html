@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mi To-Do List</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>Mi To-Do List</h1>
+      <div class="stats">
+        <span id="stat-pending" class="stat">0 pendientes</span>
+        <span id="stat-done" class="stat stat-done">0 completadas</span>
+      </div>
+    </header>
+
+    <form id="task-form" class="task-form">
+      <input type="text" id="title" placeholder="¿Qué hay que hacer?" required />
+      <textarea id="description" placeholder="Descripción (opcional)"></textarea>
+      <div class="task-form-row">
+        <select id="category_id"></select>
+        <select id="priority">
+          <option value="low">Baja</option>
+          <option value="medium" selected>Media</option>
+          <option value="high">Alta</option>
+        </select>
+        <input type="date" id="due_date" />
+        <button type="submit">Agregar</button>
+      </div>
+    </form>
+
+    <ul id="task-list" class="task-list"></ul>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
