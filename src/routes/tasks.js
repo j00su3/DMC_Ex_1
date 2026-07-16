@@ -95,6 +95,11 @@ router.put('/:id', async (req, res) => {
         INSERT INTO tasks (title, description, priority, due_date, category_id, recurrence)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(updated.title, updated.description, updated.priority, nextDueDate, updated.category_id, updated.recurrence);
+
+      // La recurrencia se transfiere al clon. Limpiarla en la tarea ya completada
+      // evita generar clones duplicados si el usuario la desmarca y vuelve a completarla.
+      db.prepare('UPDATE tasks SET recurrence = NULL WHERE id = ?').run(id);
+      updated.recurrence = null;
     }
   }
 
