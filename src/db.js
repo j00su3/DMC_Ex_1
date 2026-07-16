@@ -37,6 +37,11 @@ db.exec(`
   );
 `);
 
+const taskColumns = db.prepare('PRAGMA table_info(tasks)').all().map((c) => c.name);
+if (!taskColumns.includes('recurrence')) {
+  db.exec('ALTER TABLE tasks ADD COLUMN recurrence TEXT');
+}
+
 const seedCategories = db.prepare('SELECT COUNT(*) AS count FROM categories').get();
 if (seedCategories.count === 0) {
   const insert = db.prepare('INSERT INTO categories (name, color) VALUES (?, ?)');

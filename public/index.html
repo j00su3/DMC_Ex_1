@@ -5,16 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Mi To-Do List</title>
   <link rel="stylesheet" href="styles.css" />
+  <script>
+    (function () {
+      var saved = localStorage.getItem("todo-theme");
+      document.documentElement.setAttribute("data-theme", saved === "light" ? "light" : "dark");
+    })();
+  </script>
 </head>
 <body>
   <main class="app">
     <header class="app-header">
       <h1>Mi To-Do List</h1>
-      <div class="stats">
-        <span id="stat-pending" class="stat">0 pendientes</span>
-        <span id="stat-done" class="stat stat-done">0 completadas</span>
-      </div>
+      <button type="button" id="theme-toggle" class="moon-badge" aria-label="Cambiar tema">🌙</button>
     </header>
+
+    <div class="stats">
+      <div class="stat-tile stat-overdue">
+        <div class="stat-value" id="stat-overdue">0</div>
+        <div class="stat-label">vencidas</div>
+      </div>
+      <div class="stat-tile stat-pending">
+        <div class="stat-value" id="stat-pending">0</div>
+        <div class="stat-label">pendientes</div>
+      </div>
+      <div class="stat-tile stat-done">
+        <div class="stat-value" id="stat-done">0</div>
+        <div class="stat-label">completadas</div>
+      </div>
+    </div>
 
     <form id="task-form" class="task-form">
       <input type="text" id="title" placeholder="¿Qué hay que hacer?" required />
@@ -27,11 +45,30 @@
           <option value="high">Alta</option>
         </select>
         <input type="date" id="due_date" />
+        <select id="recurrence">
+          <option value="" selected>No repetir</option>
+          <option value="daily">Diaria</option>
+          <option value="weekly">Semanal</option>
+          <option value="monthly">Mensual</option>
+        </select>
         <button type="submit">Agregar</button>
       </div>
     </form>
 
-    <ul id="task-list" class="task-list"></ul>
+    <div class="filter-bar">
+      <input type="search" id="search-input" placeholder="Buscar tareas..." />
+      <select id="filter-category">
+        <option value="">Todas las categorías</option>
+      </select>
+      <select id="filter-priority">
+        <option value="">Todas las prioridades</option>
+        <option value="low">Baja</option>
+        <option value="medium">Media</option>
+        <option value="high">Alta</option>
+      </select>
+    </div>
+
+    <div id="task-groups"></div>
   </main>
 
   <script src="app.js"></script>

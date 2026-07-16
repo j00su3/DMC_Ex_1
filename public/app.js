@@ -1,13 +1,38 @@
 const TASKS_URL = "/api/tasks";
 const CATEGORIES_URL = "/api/categories";
+const THEME_KEY = "todo-theme";
+
+const themeToggle = document.getElementById("theme-toggle");
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  themeToggle.textContent = theme === "light" ? "☀️" : "🌙";
+}
+
+applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
+
+themeToggle.addEventListener("click", () => {
+  const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+  applyTheme(next);
+  localStorage.setItem(THEME_KEY, next);
+});
 
 const form = document.getElementById("task-form");
-const list = document.getElementById("task-list");
+const groupsContainer = document.getElementById("task-groups");
 const categorySelect = document.getElementById("category_id");
+const recurrenceSelect = document.getElementById("recurrence");
+const statOverdue = document.getElementById("stat-overdue");
 const statPending = document.getElementById("stat-pending");
 const statDone = document.getElementById("stat-done");
+const searchInput = document.getElementById("search-input");
+const filterCategory = document.getElementById("filter-category");
+const filterPriority = document.getElementById("filter-priority");
+
+const RECURRENCE_LABELS = { daily: "Diaria", weekly: "Semanal", monthly: "Mensual" };
 
 let categories = [];
+let allTasks = [];
+let filters = { search: "", category: "", priority: "" };
 
 async function loadCategories() {
   const res = await fetch(CATEGORIES_URL);
@@ -18,81 +43,164 @@ async function loadCategories() {
     categories
       .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
       .join("");
+
+  filterCategory.innerHTML =
+    '<option value="">Todas las categorías</option>' +
+    categories
+      .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+      .join("");
+}
+
+function applyFilters(tasks) {
+  return tasks.filter((task) => {
+    if (filters.category && String(task.category_id) !== filters.category) return false;
+    if (filters.priority && task.priority !== filters.priority) return false;
+    if (filters.search) {
+      const haystack = `${task.title} ${task.description || ""}`.toLowerCase();
+      if (!haystack.includes(filters.search)) return false;
+    }
+    return true;
+  });
 }
 
 async function fetchTasks() {
   const res = await fetch(TASKS_URL);
-  const tasks = await res.json();
-  renderStats(tasks);
-  renderTasks(tasks);
+  allTasks = await res.json();
+  render();
 }
 
-function renderStats(tasks) {
-  const pending = tasks.filter((t) => !t.completed).length;
-  const done = tasks.length - pending;
-  statPending.textContent = `${pending} pendiente${pending === 1 ? "" : "s"}`;
-  statDone.textContent = `${done} completada${done === 1 ? "" : "s"}`;
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-function renderTasks(tasks) {
-  list.innerHTML = "";
+function decorate(task) {
+  const today = todayStr();
+  const isOverdue = !!task.due_date && !task.completed && task.due_date < today;
+  const isToday = task.due_date === today && !task.completed;
 
-  if (tasks.length === 0) {
-    list.innerHTML =
-      '<li class="empty-state">No hay tareas todavía. ¡Agrega una!</li>';
+  let dueLabel = "";
+  let dueClass = "normal";
+  if (task.due_date) {
+    if (isOverdue) {
+      const days = Math.max(1, Math.round((new Date(today) - new Date(task.due_date)) / 86400000));
+      dueLabel = days === 1 ? "Venció ayer" : `Venció hace ${days} días`;
+      dueClass = "overdue";
+    } else if (isToday) {
+      dueLabel = "Vence hoy";
+      dueClass = "today";
+    } else {
+      dueLabel = `Vence ${task.due_date}`;
+      dueClass = "normal";
+    }
+  }
+
+  return { ...task, isOverdue, isToday, dueLabel, dueClass };
+}
+
+function buildGroups(tasks) {
+  const decorated = tasks.map(decorate);
+  const pending = decorated.filter((t) => !t.completed);
+  const completed = decorated.filter((t) => t.completed);
+
+  const overdue = pending.filter((t) => t.isOverdue);
+  const today = pending.filter((t) => t.isToday);
+  const upcoming = pending.filter((t) => t.due_date && !t.isOverdue && !t.isToday);
+  const noDate = pending.filter((t) => !t.due_date);
+
+  const groups = [
+    { key: "overdue", label: "Vencidas", color: "#f26860", items: overdue },
+    { key: "today", label: "Hoy", color: "#e3ab4f", items: today },
+    { key: "upcoming", label: "Próximas", color: "#8a8d94", items: upcoming },
+    { key: "nodate", label: "Sin fecha", color: "#8a8d94", items: noDate },
+  ].filter((g) => g.items.length > 0);
+
+  if (completed.length > 0) {
+    groups.push({ key: "completed", label: "Completadas", color: "#8a8d94", items: completed });
+  }
+
+  return {
+    stats: {
+      overdueCount: decorated.filter((t) => t.isOverdue).length,
+      pendingCount: pending.length,
+      doneCount: completed.length,
+    },
+    groups,
+  };
+}
+
+function render() {
+  const { stats, groups } = buildGroups(applyFilters(allTasks));
+  renderStats(stats);
+  renderGroups(groups);
+}
+
+function renderStats(stats) {
+  statOverdue.textContent = stats.overdueCount;
+  statPending.textContent = stats.pendingCount;
+  statDone.textContent = stats.doneCount;
+}
+
+function renderGroups(groups) {
+  groupsContainer.innerHTML = "";
+
+  if (groups.length === 0) {
+    groupsContainer.innerHTML =
+      '<div class="empty-state">No hay tareas todavía. ¡Agrega una!</div>';
     return;
   }
 
-  for (const task of tasks) {
-    list.appendChild(renderTaskItem(task));
+  for (const group of groups) {
+    const section = document.createElement("div");
+    section.className = "group";
+    section.innerHTML = `
+      <div class="group-header" style="color:${group.color}">${escapeHtml(group.label)} · ${group.items.length}</div>
+      <div class="group-items">${group.items.map(renderTaskCard).join("")}</div>
+    `;
+    groupsContainer.appendChild(section);
   }
 }
 
-function renderTaskItem(task) {
-  const li = document.createElement("li");
-  li.className = `task-item priority-${task.priority} ${task.completed ? "completed" : ""}`;
-
-  const meta = task.due_date ? `Vence: ${task.due_date}` : "";
+function renderTaskCard(task) {
   const categoryBadge = task.category_name
-    ? `<span class="badge" style="background:${task.category_color}">${escapeHtml(task.category_name)}</span>`
+    ? `<span class="category-badge" style="background:${task.category_color}">${escapeHtml(task.category_name)}</span>`
     : "";
 
-  const progressPct =
+  const progress =
     task.subtasks_total > 0
-      ? Math.round((task.subtasks_done / task.subtasks_total) * 100)
-      : null;
-
-  li.innerHTML = `
-    <input type="checkbox" ${task.completed ? "checked" : ""} data-action="toggle" data-id="${task.id}" />
-    <div class="task-content">
-      <div class="task-title-row">
-        <span class="task-title">${escapeHtml(task.title)}</span>
-        ${categoryBadge}
-      </div>
-      ${task.description ? `<div class="task-description">${escapeHtml(task.description)}</div>` : ""}
-      ${meta ? `<div class="task-meta">${escapeHtml(meta)}</div>` : ""}
-      ${
-        progressPct !== null
-          ? `
-        <div class="progress-bar"><div class="progress-fill" style="width:${progressPct}%"></div></div>
+      ? `
+        <div class="progress-bar"><div class="progress-fill" style="width:${Math.round((task.subtasks_done / task.subtasks_total) * 100)}%"></div></div>
         <div class="progress-label">${task.subtasks_done}/${task.subtasks_total} subtareas</div>
       `
-          : ""
-      }
-      <ul class="subtask-list" data-task-id="${task.id}">
-        ${task.subtasks.map(renderSubtaskItem).join("")}
-      </ul>
-      <form class="subtask-form" data-task-id="${task.id}">
-        <input type="text" placeholder="Agregar subtarea..." data-role="subtask-input" />
-        <button type="submit">+</button>
-      </form>
-    </div>
-    <div class="task-actions">
-      <button class="delete" data-action="delete" data-id="${task.id}">Eliminar</button>
+      : "";
+
+  const recurrenceBadge = task.recurrence
+    ? `<span class="recurrence-badge">🔁 ${escapeHtml(RECURRENCE_LABELS[task.recurrence] || task.recurrence)}</span>`
+    : "";
+
+  return `
+    <div class="task-card ${task.completed ? "completed" : ""}">
+      <input type="checkbox" ${task.completed ? "checked" : ""} data-action="toggle" data-id="${task.id}" />
+      <div class="task-body">
+        <div class="task-title-row">
+          <span class="priority-dot ${task.priority}"></span>
+          <span class="task-title">${escapeHtml(task.title)}</span>
+          ${categoryBadge}
+          ${recurrenceBadge}
+        </div>
+        ${task.description ? `<div class="task-description">${escapeHtml(task.description)}</div>` : ""}
+        ${task.dueLabel ? `<div class="due-label ${task.dueClass}">${escapeHtml(task.dueLabel)}</div>` : ""}
+        ${progress}
+        <ul class="subtask-list" data-task-id="${task.id}">
+          ${task.subtasks.map(renderSubtaskItem).join("")}
+        </ul>
+        <form class="subtask-form" data-task-id="${task.id}">
+          <input type="text" placeholder="Agregar subtarea..." data-role="subtask-input" />
+          <button type="submit">+</button>
+        </form>
+      </div>
+      <button class="task-delete" data-action="delete" data-id="${task.id}">Eliminar</button>
     </div>
   `;
-
-  return li;
 }
 
 function renderSubtaskItem(subtask) {
@@ -122,6 +230,7 @@ form.addEventListener("submit", async (e) => {
   const priority = document.getElementById("priority").value;
   const due_date = document.getElementById("due_date").value || null;
   const category_id = categorySelect.value || null;
+  const recurrence = recurrenceSelect.value || null;
 
   submitButton.disabled = true;
   submitButton.classList.add("is-loading");
@@ -137,6 +246,7 @@ form.addEventListener("submit", async (e) => {
         priority,
         due_date,
         category_id,
+        recurrence,
       }),
     });
 
@@ -149,7 +259,7 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-list.addEventListener("click", async (e) => {
+groupsContainer.addEventListener("click", async (e) => {
   const { action, id, taskId, subtaskId } = e.target.dataset;
   if (!action) return;
 
@@ -184,7 +294,7 @@ list.addEventListener("click", async (e) => {
   }
 });
 
-list.addEventListener("submit", async (e) => {
+groupsContainer.addEventListener("submit", async (e) => {
   if (!e.target.classList.contains("subtask-form")) return;
   e.preventDefault();
 
@@ -201,6 +311,21 @@ list.addEventListener("submit", async (e) => {
   });
 
   await fetchTasks();
+});
+
+searchInput.addEventListener("input", () => {
+  filters.search = searchInput.value.trim().toLowerCase();
+  render();
+});
+
+filterCategory.addEventListener("change", () => {
+  filters.category = filterCategory.value;
+  render();
+});
+
+filterPriority.addEventListener("change", () => {
+  filters.priority = filterPriority.value;
+  render();
 });
 
 (async function init() {

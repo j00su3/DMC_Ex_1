@@ -15,6 +15,14 @@ const SELECT_TASKS = `
   LEFT JOIN categories c ON c.id = t.category_id
 `;
 
+function getNextDueDate(dueDate, recurrence) {
+  const base = dueDate ? new Date(`${dueDate}T00:00:00`) : new Date();
+  if (recurrence === 'daily') base.setDate(base.getDate() + 1);
+  else if (recurrence === 'weekly') base.setDate(base.getDate() + 7);
+  else if (recurrence === 'monthly') base.setMonth(base.getMonth() + 1);
+  return base.toISOString().slice(0, 10);
+}
+
 function getTaskWithSubtasks(id) {
   const task = db.prepare(`${SELECT_TASKS} WHERE t.id = ?`).get(id);
   if (!task) return null;
@@ -34,17 +42,17 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { title, description = '', priority = 'medium', due_date = null, category_id = null } = req.body;
+  const { title, description = '', priority = 'medium', due_date = null, category_id = null, recurrence = null } = req.body;
 
   if (!title || !title.trim()) {
     return res.status(400).json({ error: 'title is required' });
   }
 
   const stmt = db.prepare(`
-    INSERT INTO tasks (title, description, priority, due_date, category_id)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO tasks (title, description, priority, due_date, category_id, recurrence)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
-  const result = stmt.run(title.trim(), description, priority, due_date, category_id);
+  const result = stmt.run(title.trim(), description, priority, due_date, category_id, recurrence || null);
   const task = getTaskWithSubtasks(result.lastInsertRowid);
 
   await notifyTelegram(`Nueva tarea creada: "${task.title}"`);
@@ -67,18 +75,27 @@ router.put('/:id', async (req, res) => {
     due_date = existing.due_date,
     completed = existing.completed,
     category_id = existing.category_id,
+    recurrence = existing.recurrence,
   } = req.body;
 
   db.prepare(`
     UPDATE tasks
-    SET title = ?, description = ?, priority = ?, due_date = ?, completed = ?, category_id = ?
+    SET title = ?, description = ?, priority = ?, due_date = ?, completed = ?, category_id = ?, recurrence = ?
     WHERE id = ?
-  `).run(title, description, priority, due_date, completed ? 1 : 0, category_id, id);
+  `).run(title, description, priority, due_date, completed ? 1 : 0, category_id, recurrence || null, id);
 
   const updated = getTaskWithSubtasks(id);
 
   if (!existing.completed && updated.completed) {
     await notifyTelegram(`Tarea completada: "${updated.title}"`);
+
+    if (updated.recurrence) {
+      const nextDueDate = getNextDueDate(updated.due_date, updated.recurrence);
+      db.prepare(`
+        INSERT INTO tasks (title, description, priority, due_date, category_id, recurrence)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(updated.title, updated.description, updated.priority, nextDueDate, updated.category_id, updated.recurrence);
+    }
   }
 
   res.json(updated);
